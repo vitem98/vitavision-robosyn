@@ -1,0 +1,32 @@
+# PhaseLoRA on official ACT. python scripts/eval_policy.py --config policy/phaselora/deploy_policy.yml
+
+policy_name: phaselora
+task_name: null
+setting: null
+model_name: null
+seed: 0
+max_episodes: 20
+max_steps: 1000
+headless: true
+pytorch_device: cuda
+filter_dataset_saving: true
+eval_video_log: true
+temporal_ensemble_coeff: null
+pace: false
+ocrh_stitch: false
+eval_video_obs_keys:
+  - cam_high
+  - cam_right_wrist
+  - cam_left_wrist
+eval_reset_sync_steps: 1
+eval_expert_check: true
+
+checkpoint_path: null
+act_step: 10
+state_obs_path: robot/qpos
+strict_action_dim: true
+scale_gripper: false
+image_key_map:
+  observation.images.cam_high: cam_high
+  observation.images.cam_right_wrist: cam_right_wrist
+  observation.images.cam_left_wrist: cam_left_wrist

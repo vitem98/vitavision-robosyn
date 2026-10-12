@@ -1,0 +1,2 @@
+PhaseLoRA parameterization from https://github.com/Grinffin/PhaseLoRA (arXiv:2608.15285).
+Official code targets π₀.₅; this directory applies Eqs. (3)–(4) and weak P/E supervision to official ACT.
