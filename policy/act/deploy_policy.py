@@ -114,24 +114,68 @@ def _enable_temporal_ensemble(policy, coeff) -> None:
     policy.temporal_ensembler = ACTTemporalEnsembler(coeff, policy.config.chunk_size)
 
 
+def _is_hub_repo_id(checkpoint_path: str) -> bool:
+    """True for ids such as RoboSynChallenge/ACT_sim_click_bell."""
+    if os.path.exists(checkpoint_path):
+        return False
+    owner, _, name = checkpoint_path.partition("/")
+    return bool(owner and name) and "/" not in name and not checkpoint_path.startswith(".")
+
+
+def _checkpoint_file(checkpoint_path: str, filename: str) -> str | None:
+    """Return a local file, downloading it when checkpoint_path is a Hub repo id."""
+    local_file = os.path.join(checkpoint_path, filename)
+    if os.path.isfile(local_file):
+        return local_file
+    if not _is_hub_repo_id(checkpoint_path):
+        return None
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        return None
+    try:
+        return hf_hub_download(repo_id=checkpoint_path, filename=filename)
+    except Exception:
+        return None
+
+
+def _read_matching_tensors(model_file: str, device, predicate) -> dict[str, torch.Tensor]:
+    stats = {}
+    with safe_open(model_file, framework="pt", device=str(device)) as handle:
+        for key in handle.keys():
+            if predicate(key):
+                stats[key] = handle.get_tensor(key)
+    return stats
+
+
 def _load_norm_stats(checkpoint_path, device) -> dict[str, torch.Tensor]:
     """Load the mean/std buffers shipped inside the released ACT weights.
 
     The installed LeRobot no longer applies these modules, so the raw
     observations were being fed to a network trained on normalized inputs.
+    Hub ids such as RoboSynChallenge/ACT_sim_table_rearrangement are resolved
+    to the cached snapshot. A missing local file used to return no stats, and
+    the policy then ran on unnormalized observations.
     """
-    model_file = os.path.join(checkpoint_path, "model.safetensors")
+    model_file = _checkpoint_file(checkpoint_path, "model.safetensors")
     stats = {}
-    if os.path.isfile(model_file):
-        with safe_open(model_file, framework="pt", device=str(device)) as handle:
-            for key in handle.keys():
-                if key.startswith("normalize_inputs.buffer_") or key.startswith(
-                    "unnormalize_outputs.buffer_"
-                ):
-                    stats[key] = handle.get_tensor(key)
+    if model_file:
+        stats = _read_matching_tensors(
+            model_file,
+            device,
+            lambda key: key.startswith("normalize_inputs.buffer_")
+            or key.startswith("unnormalize_outputs.buffer_"),
+        )
     if stats:
         return stats
-    return _load_processor_norm_stats(checkpoint_path, device)
+    stats = _load_processor_norm_stats(checkpoint_path, device)
+    if not stats:
+        raise FileNotFoundError(
+            "ACT normalization stats were not found for "
+            f"{checkpoint_path}. Expected model.safetensors or the LeRobot "
+            "normalizer processor files in a local directory or Hugging Face repo."
+        )
+    return stats
 
 
 def _processor_feature_name(key: str) -> str:
@@ -149,13 +193,13 @@ def _processor_feature_name(key: str) -> str:
 
 def _load_processor_norm_stats(checkpoint_path, device) -> dict[str, torch.Tensor]:
     stats = {}
-    pre_file = os.path.join(
+    pre_file = _checkpoint_file(
         checkpoint_path, "policy_preprocessor_step_3_normalizer_processor.safetensors"
     )
-    post_file = os.path.join(
+    post_file = _checkpoint_file(
         checkpoint_path, "policy_postprocessor_step_0_unnormalizer_processor.safetensors"
     )
-    if os.path.isfile(pre_file):
+    if pre_file:
         with safe_open(pre_file, framework="pt", device=str(device)) as handle:
             for key in handle.keys():
                 feature, stat = _processor_feature_name(key).rsplit(".", 1)
@@ -163,7 +207,7 @@ def _load_processor_norm_stats(checkpoint_path, device) -> dict[str, torch.Tenso
                     continue
                 buffer = "normalize_inputs.buffer_" + feature.replace(".", "_")
                 stats[f"{buffer}.{stat}"] = handle.get_tensor(key)
-    if os.path.isfile(post_file):
+    if post_file:
         with safe_open(post_file, framework="pt", device=str(device)) as handle:
             for key in ("action.mean", "action.std"):
                 if key in handle.keys():

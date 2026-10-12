@@ -27,6 +27,7 @@ Start from the official benchmark checkout, then copy this overlay on top of it:
 git clone https://github.com/EDEM-AI/RoboSynChallenge.git
 cd RoboSynChallenge
 git clone https://github.com/vitem98/vitavision-robosyn.git /tmp/vitavision-robosyn
+rm -rf policy/act policy/phaselora
 cp -a /tmp/vitavision-robosyn/policy/act policy/act
 cp -a /tmp/vitavision-robosyn/policy/phaselora policy/phaselora
 cp -a /tmp/vitavision-robosyn/policy/inference_timing.py policy/inference_timing.py
